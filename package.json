@@ -1,0 +1,70 @@
+{
+  "name": "@hoda5/mergeableobject",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/MergeableObject.js",
+  "types": "dist/MergeableObject.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "rm -rf dist ; tsc -p . --watch",
+    "lint": "tslint --project .",
+    "lintfix": "tslint --project . --fix",
+    "test": "jest",
+    "codecov": "cat coverage/coverage-final.json | npx codecov"
+  },
+  "author": "josefernandotolentino@gmail.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thr0w/tracker.git"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@hoda5/extensions": "^1.0.19",
+    "@hoda5/h5debug": "^1.0.3",
+    "react": "^16.4.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^23.1.2",
+    "@types/react": "^16.4.0",
+    "jest": "^23.2.0",
+    "react-test-renderer": "^16.4.1",
+    "ts-jest": "^23.10.3",
+    "tslint": "^5.9.1",
+    "typescript": "^3.1.1"
+  },
+  "jest": {
+    "verbose": true,
+    "transform": {
+      "^.+\\.tsx?$": "ts-jest"
+    },
+    "roots": [
+      "src/"
+    ],
+    "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.tsx?$",
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "json",
+      "node"
+    ],
+    "collectCoverage": true,
+    "coverageReporters": [
+      "json",
+      "lcov",
+      "text",
+      "html"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 100
+      }
+    },
+    "collectCoverageFrom": [
+      "**/*.{ts,tsx}",
+      "!**/node_modules/**",
+      "!**/vendor/**"
+    ]
+  }
+}
