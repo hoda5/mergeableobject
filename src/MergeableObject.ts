@@ -41,7 +41,7 @@ export type Subscription<
   }
 
 export interface MergeableValue {
-  data: any
+  my: any
   readonly original: any
   readonly theirs: any
   readonly conflict: boolean
@@ -138,7 +138,7 @@ export interface MergeableObject<
   },
   P extends QueryParams,
   > {
-  subscribe(queryParams: P, onChange: (subscription: Subscription<T, C1 & C2, M, P>) => void):
+  subscribe(queryParams: P & { id: GUID }, onChange: (subscription: Subscription<T, C1 & C2, M, P>) => void):
     Subscription<T, C1 & C2, M, P>,
 }
 
@@ -169,7 +169,7 @@ function defineMergeableObject<
 
   return {
     subscribe(queryParams: P, onChange) {
-      const fullPath = resolveQueryPath(basePath, queryParams)
+      const fullPath = resolveQueryPath([...basePath, "id"], queryParams)
       let sub = subscriptions[fullPath]
       if (!sub) {
         sub = subscriptions[fullPath] = createSubscribe(fullPath)
@@ -186,6 +186,7 @@ function defineMergeableObject<
     let data = {}
     let original = {}
     let theirs = {}
+
     const props: PropertyDescriptorMap = {
       fullPath: {
         value: fullPath,
@@ -205,7 +206,10 @@ function defineMergeableObject<
       data: {
         get() {
           if (state === 1) subscribe()
-          return data
+          return data.proxyIt(() => {
+            if (state === 3) state = 4
+            dispathChanges()
+          })
         },
       },
       original: {
@@ -239,11 +243,13 @@ function defineMergeableObject<
       get: {
         value(relativePath: string) {
           const r: MergeableValue = {
-            get data() {
+            get my() {
               return data.getPropByPath(relativePath)
             },
-            set data(value: any) {
+            set my(value: any) {
               data.setPropByPath(relativePath, value)
+              if (state === 3) state = 4
+              dispathChanges()
             },
             get original() {
               return original.getPropByPath(relativePath)
@@ -252,7 +258,9 @@ function defineMergeableObject<
               return theirs.getPropByPath(relativePath)
             },
             get conflict() {
-              return false // TODO
+              const o = original.getPropByPath(relativePath)
+              const t = theirs.getPropByPath(relativePath)
+              return Object.compareObj(o, t, true) !== 0
             },
             reset() {
               // TODO
@@ -272,6 +280,8 @@ function defineMergeableObject<
       setValue: {
         value(relativePath: string, value: any) {
           data.setPropByPath(relativePath, value)
+          if (state === 3) state = 4
+          dispathChanges()
         },
       },
       addChangeListenner: {
@@ -285,9 +295,36 @@ function defineMergeableObject<
     }
     Object.defineProperties(self, props)
     return self
-    function getChanges(): false | { [relativePath: string]: any } {
-      // TODO
-      return null as any
+    function getChanges(): false | { [relativePath: string]: MergeableValue } {
+      const changes: { [relativePath: string]: MergeableValue } = {}
+      const hasChanges = compare("", data, theirs, original)
+      if (hasChanges) {
+        state = 4
+        return changes
+      }
+      state = 3
+      return false
+      function compare(path: string, d: any, t: any, o: any): boolean {
+        let wasChanged = false
+        d = Object.isObject(d) ? d : {}
+        t = Object.isObject(t) ? t : {}
+        o = Object.isObject(o) ? o : {}
+        let cprops = Object.keys(d).concat(Object.keys(t)).concat(Object.keys(o))
+        cprops = cprops.filter((p, idx) => cprops.indexOf(p) !== idx)
+        cprops.forEach((p) => {
+          const pd = d[p]
+          const pt = t[p]
+          const po = o[p]
+          if (Object.prototype.compareObj(pd, po, true) !== 0) {
+            wasChanged = true
+            const ppath = [path, p, ""].join("")
+            const isObj = Object.isObject(pd) || Object.isObject(pt) || Object.isObject(po)
+            if (isObj) compare(ppath, pd, pt, po)
+            else changes[ppath] = self.get(ppath)
+          }
+        })
+        return wasChanged
+      }
     }
     function dispathChanges() {
       changeListenners.forEach((ev) => asap(() => ev(self)))
@@ -300,9 +337,13 @@ function defineMergeableObject<
       theirs = {}
       state = 2
       subinfo = repositories.map((r) => r.onSubscribe(fullPath, (delta) => {
+        const l = fullPath.length
         Object.keys(delta).forEach((dfp) => {
-          const d = delta[dfp]
-          theirs.setPropByPath(dfp, d)
+          if (dfp.substr(0, l) === fullPath) {
+            const drp = dfp.substr(l)
+            const d = delta[dfp]
+            theirs.setPropByPath(drp, d, true)
+          }
         })
         if (state <= 3) {
           original = theirs.cloneObj()

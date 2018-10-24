@@ -19,7 +19,7 @@
   },
   "license": "ISC",
   "dependencies": {
-    "@hoda5/extensions": "^1.0.19",
+    "@hoda5/extensions": "^1.0.22",
     "@hoda5/h5debug": "^1.0.3",
     "react": "^16.4.1"
   },
