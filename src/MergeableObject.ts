@@ -25,7 +25,7 @@ export type Subscription<
   {
     readonly fullPath: string;
     readonly pending: boolean;
-    data: T & ReadOnlyObject<C>,
+    my: T & ReadOnlyObject<C>,
     original: ReadOnlyObject<T & C>,
     theirs: ReadOnlyObject<T & C>,
     changes: {
@@ -35,8 +35,8 @@ export type Subscription<
     reset(): void;
     commit(): void;
     get(relativePath: string): MergeableValue;
-    getData(relativePath: string): any;
-    setData(relativePath: string, value: any): void;
+    getMy(relativePath: string): any;
+    setMy(relativePath: string, value: any): void;
     unsubscribe(): void;
   }
 
@@ -59,12 +59,13 @@ export interface Repository {
 
 export function testRepository<T>(opts: { name: string, db: T }) {
   const handles: Array<{ fullPath: string, onPull: (delta: object) => void }> = []
-  let workData = opts.db.cloneObj()
+  const testdb = opts.db
+  let mydb = testdb.cloneObj()
   const self: Repository & { db: T, resetDB(): Promise<void> } = {
     name: opts.name,
     db: opts.db,
     async resetDB() {
-      workData = opts.db.cloneObj()
+      mydb = testdb.cloneObj()
     },
     onSubscribe(fullPath, onPull) {
       const handle = { fullPath, onPull }
@@ -79,7 +80,7 @@ export function testRepository<T>(opts: { name: string, db: T }) {
     },
     onPush(delta) {
       Object.keys(delta).forEach((fullPath) => {
-        workData.setPropByPath(fullPath, delta[fullPath])
+        mydb.setPropByPath(fullPath, delta[fullPath])
       })
       notify()
     },
@@ -88,7 +89,7 @@ export function testRepository<T>(opts: { name: string, db: T }) {
   function notify() {
     handles.forEach((h) => {
       asap(() => {
-        const v = workData.getPropByPath(h.fullPath)
+        const v = mydb.getPropByPath(h.fullPath)
         h.onPull({ [h.fullPath]: v })
       })
     })
@@ -183,9 +184,9 @@ function defineMergeableObject<
     const changeListenners: Array<(subscription: Subscription<T, C1 & C2, M, P>) => void> = []
     let subinfo: Array<{ stop(): void }> | undefined
     let state: 1 | 2 | 3 | 4 = 1 // 1=not initialized, 2=subscribing, 3=clean, 4=dirty
-    let data = {}
-    let original = {}
-    let theirs = {}
+    let _my = {}
+    let _original = {}
+    let _theirs = {}
 
     const props: PropertyDescriptorMap = {
       fullPath: {
@@ -203,10 +204,10 @@ function defineMergeableObject<
           return state === 2 && getChanges()
         },
       },
-      data: {
+      my: {
         get() {
           if (state === 1) subscribe()
-          return data.proxyIt(() => {
+          return _my.proxyIt(() => {
             if (state === 3) state = 4
             dispathChanges()
           })
@@ -215,13 +216,13 @@ function defineMergeableObject<
       original: {
         get() {
           if (state === 1) subscribe()
-          return original
+          return _original
         },
       },
       theirs: {
         get() {
           if (state === 1) subscribe()
-          return theirs
+          return _theirs
         },
       },
       changes: {
@@ -244,22 +245,22 @@ function defineMergeableObject<
         value(relativePath: string) {
           const r: MergeableValue = {
             get my() {
-              return data.getPropByPath(relativePath)
+              return _my.getPropByPath(relativePath)
             },
             set my(value: any) {
-              data.setPropByPath(relativePath, value)
+              _my.setPropByPath(relativePath, value)
               if (state === 3) state = 4
               dispathChanges()
             },
             get original() {
-              return original.getPropByPath(relativePath)
+              return _original.getPropByPath(relativePath)
             },
             get theirs() {
-              return theirs.getPropByPath(relativePath)
+              return _theirs.getPropByPath(relativePath)
             },
             get conflict() {
-              const o = original.getPropByPath(relativePath)
-              const t = theirs.getPropByPath(relativePath)
+              const o = _original.getPropByPath(relativePath)
+              const t = _theirs.getPropByPath(relativePath)
               return Object.compareObj(o, t, true) !== 0
             },
             reset() {
@@ -274,12 +275,12 @@ function defineMergeableObject<
       },
       getValue: {
         value(relativePath: string) {
-          return data.getPropByPath(relativePath)
+          return _my.getPropByPath(relativePath)
         },
       },
       setValue: {
         value(relativePath: string, value: any) {
-          data.setPropByPath(relativePath, value)
+          _my.setPropByPath(relativePath, value)
           if (state === 3) state = 4
           dispathChanges()
         },
@@ -297,7 +298,7 @@ function defineMergeableObject<
     return self
     function getChanges(): false | { [relativePath: string]: MergeableValue } {
       const changes: { [relativePath: string]: MergeableValue } = {}
-      const hasChanges = compare("", data, theirs, original)
+      const hasChanges = compare("", _my, _theirs, _original)
       if (hasChanges) {
         state = 4
         return changes
@@ -332,9 +333,9 @@ function defineMergeableObject<
 
     function subscribe() {
       if (state !== 1) return
-      data = {}
-      original = {}
-      theirs = {}
+      _my = {}
+      _original = {}
+      _theirs = {}
       state = 2
       subinfo = repositories.map((r) => r.onSubscribe(fullPath, (delta) => {
         const l = fullPath.length
@@ -342,12 +343,12 @@ function defineMergeableObject<
           if (dfp.substr(0, l) === fullPath) {
             const drp = dfp.substr(l)
             const d = delta[dfp]
-            theirs.setPropByPath(drp, d, true)
+            _theirs.setPropByPath(drp, d, true)
           }
         })
         if (state <= 3) {
-          original = theirs.cloneObj()
-          data = original.cloneObj()
+          _original = _theirs.cloneObj()
+          _my = _original.cloneObj()
           state = 3
         }
         dispathChanges()
@@ -362,17 +363,17 @@ function defineMergeableObject<
     }
 
     function onPull(d: T) {
-      theirs = d.cloneObj()
+      _theirs = d.cloneObj()
       if (state === 2) {
-        original = d.cloneObj()
-        data = d.cloneObj()
+        _original = d.cloneObj()
+        _my = d.cloneObj()
         state = 3
       }
     }
 
     function reset() {
-      original = theirs.cloneObj()
-      data = original.cloneObj()
+      _original = _theirs.cloneObj()
+      _my = _original.cloneObj()
       state = 3
       dispathChanges()
     }
