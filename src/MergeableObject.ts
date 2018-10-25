@@ -9,11 +9,6 @@ export type PathPart<T> = keyof T
 export type Path<T> = Array<PathPart<T>>
 export interface QueryParams { [name: string]: any }
 
-export type ReadOnlyObject<T> =
-  T extends object ? {
-    readonly [name in keyof T]: ReadOnlyObject<T[name]>
-  } : T
-
 export type Subscription<
   T extends object,
   C extends object,
@@ -451,4 +446,44 @@ export function resolveQueryPath<P extends QueryParams>(
   })
   // if (h5debug.h5doc) h5debug.h5doc(qry.name, qry.paramValues, "resolveQueryPath", r)
   return arr.join("/")
+}
+
+
+export interface DocDecl<FIELDS extends DocFields> {
+  name: string,
+  fields: FIELDS,
+}
+
+export interface DocDef<FIELDS extends DocFields> {
+  name: string,
+  fields: FIELDS,
+  data: PureField<FIELDS>
+}
+
+export type PureField<T> =
+  T extends DocField<infer K> ? K :
+  T extends DocFields ? {
+      [name in keyof T]: PureField<T[name]>
+  }
+  : unknown
+
+export interface DocFields {
+  [name: string]: DocField<any>
+}
+
+export interface DocField<T> {
+  fieldName: string
+  fieldType: DocFieldType<T>
+  value: T
+}
+
+export interface DocFieldType<T> {
+  fieldType: T
+  new(): DocField<T>
+  validate(v: T): boolean
+}
+
+export function defDoc<FIELDS extends DocFields>
+  (dd: DocDecl<FIELDS>): DocDef<FIELDS> {
+  return null as any
 }
