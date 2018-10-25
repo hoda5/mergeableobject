@@ -32,6 +32,16 @@ interface DocField<T, OPTS> {
     validate(): string | null,
 }
 
+interface DocFieldArray<T, ITEMOPTS> {
+    fieldName: string
+    fieldType: {
+        typeName: string,
+    }
+    itemType: DocFieldType<T, ITEMOPTS>
+    value: T[]
+    validate(): string | null,
+}
+
 // interface DocFieldComplex<FIELDS extends DocFields> extends DocField<PureField<FIELDS>> {
 //     fields: FIELDS,
 // }
@@ -39,6 +49,8 @@ interface DocField<T, OPTS> {
 interface DocFieldType<T, OPTS extends DefaultFieldOpts> {
     typeName: string,
     sample: T,
+    single: DocFieldInstance<T, OPTS & DefaultFieldOpts>
+    array(opts: DefaultArrayOpts<OPTS>): DocFieldArray<T, OPTS>
     validate(v: T, opts: OPTS): string | null,
 }
 
@@ -47,6 +59,17 @@ export interface DefaultFieldOpts {
     hint?: string
 }
 
+export interface DefaultArrayOpts<OPTS> {
+    optional?: boolean
+    hint?: string
+    minItems?: number
+    maxItems?: number
+    itemOpts: OPTS & DefaultFieldOpts
+}
+
+type DocFieldInstance<T, OPTS extends DefaultFieldOpts> =
+    ((opts: OPTS & DefaultFieldOpts) => DocField<T, OPTS & DefaultFieldOpts>)
+
 export const typeByName: { [name: string]: DocFieldType<any, any> } = {}
 
 export function defType<T, OPTS>(typeOpts: {
@@ -54,27 +77,58 @@ export function defType<T, OPTS>(typeOpts: {
     sample: T,
     validate(value: T, opts: OPTS & DefaultFieldOpts): string | null,
 }): DocFieldType<T, OPTS & DefaultFieldOpts>
-    & ((opts: OPTS & DefaultFieldOpts) => DocField<T, OPTS & DefaultFieldOpts>) {
+    & DocFieldInstance<T, OPTS> {
     const { typeName, sample, validate } = typeOpts
     if (typeByName[typeName]) throw new Error("Duplicated typename " + typeName)
+
     const tp: DocFieldType<T, OPTS & DefaultFieldOpts> = {
         typeName,
         sample,
+        single,
+        array,
         validate,
     }
-    const type = tp.mergeObjWith((fieldOpts: OPTS & DefaultFieldOpts) => {
-        const field: DocField<T, OPTS & DefaultFieldOpts> = {
+    const type = tp.mergeObjWith(single)
+    typeByName[typeName] = type
+    return type
+
+    function single(fieldOpts: OPTS & DefaultFieldOpts) {
+        const f: DocField<T, OPTS & DefaultFieldOpts> = {
             fieldName: undefined as any,
             value: undefined as any,
             fieldType: type,
             validate() {
-                return type.validate(field.value, fieldOpts)
+                return type.validate(f.value, fieldOpts)
             },
         }
-        return field
-    })
-    typeByName[typeName] = type
-    return type
+        return f
+    }
+    function array(arrayOpts: DefaultArrayOpts<OPTS>) {
+        const a: DocFieldArray<T, OPTS> = {
+            fieldName: undefined as any,
+            value: undefined as any,
+            fieldType: {
+                typeName: type.typeName + "[]",
+            },
+            itemType: type,
+            validate() {
+                const v = a.value
+                const l = v && v.length || 0
+                if (l > 0) {
+                    if (arrayOpts.minItems && l < arrayOpts.minItems) return "Mínimo: " + arrayOpts.minItems
+                    if (arrayOpts.maxItems && l > arrayOpts.maxItems) return "Máximo: " + arrayOpts.maxItems
+                    let err: string | null = null
+                    v.some((i) => {
+                        err = type.validate(i, arrayOpts.itemOpts)
+                        return err !== null
+                    })
+                    if (err) return err
+                } else if (!arrayOpts.optional) return "Obrigatório"
+                return null
+            },
+        }
+        return a
+    }
 }
 
 export function configField<T, OPTS>(field: DocField<T, OPTS>, opts: {
@@ -137,7 +191,7 @@ export interface ComplexDef<FIELDS> {
         typeName: string,
         validate?(value: PureField<FIELDS>, opts: OPTS & DefaultFieldOpts): string | null,
     }): DocFieldType<PureField<FIELDS>, OPTS & DefaultFieldOpts>
-        & ((opts: OPTS & DefaultFieldOpts) => DocField<PureField<FIELDS>, OPTS & DefaultFieldOpts>)
+        & DocFieldInstance<PureField<FIELDS>, OPTS & DefaultFieldOpts>
 }
 
 export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexDef<FIELDS> {
@@ -151,7 +205,7 @@ export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexDef<FI
             typeName: string,
             validate?(value: PureField<FIELDS>, opts: OPTS & DefaultFieldOpts): string | null,
         }): DocFieldType<PureField<FIELDS>, OPTS & DefaultFieldOpts>
-            & ((opts: OPTS & DefaultFieldOpts) => DocField<PureField<FIELDS>, OPTS & DefaultFieldOpts>) {
+            & DocFieldInstance<PureField<FIELDS>, OPTS & DefaultFieldOpts> {
 
             const v = typeOpts.validate ? typeOpts.validate :
                 (value: PureField<FIELDS>, fieldOpts: DefaultFieldOpts) => {

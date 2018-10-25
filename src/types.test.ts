@@ -55,6 +55,27 @@ describe("types", () => {
             expect(f.validate()).toBeNull()
         })
 
+        it("single", () => {
+            const i = t.single({})
+            expect(i.fieldType.typeName).toBe("t")
+        })
+        it("array", () => {
+            const i = t.array({ itemOpts: {} })
+            configField(i, {
+                name: "i",
+                onGet() {
+                    return arr
+                },
+                onSet(value) {
+                    arr=value
+                }
+            })
+            expect(i.fieldType.typeName).toBe("t[]")
+            expect(i.itemType.typeName).toBe("t")
+            // i.push()
+            // i.pop()
+        })
+
         it("typeByName", () => {
             expect(typeByName.t).toBe(t)
 
