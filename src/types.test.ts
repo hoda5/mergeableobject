@@ -203,21 +203,27 @@ describe("types", () => {
             const _ml = complex({
                 a: numberType({}),
                 l1: complex({
-                    b: numberType({}),
+                    l2: complex({
+                        b: numberType({}),
+                    }),
                 }),
             })
 
             it("complex", () => {
                 expect(_ml.fieldType.fields.a.fieldType.typeName).toBe("number")
-                expect(_ml.fieldType.fields.l1.fieldType.fields.b.fieldType.typeName).toBe("number")
-                expect(_ml.fieldType.sample).toEqual({ a: 0, l1: { b: 0 } })
+                expect(_ml.fieldType.fields.l1.fieldType.fields.l2.fieldType.fields.b.fieldType.typeName).toBe("number")
+                expect(_ml.fieldType.sample).toEqual({ a: 0, l1: { l2: { b: 0 } } })
+                type TB = typeof _ml.fieldType.sample.l1.l2.b
+                type TBOK = TB extends number ? "OK" : "B devia ser NUMBER"
+                const tbok: TBOK = "OK"
+                expect(tbok).toBe("OK")
             })
 
             const _complexType = _ml.defType<{ exige3: boolean }>({
                 typeName: "_ml",
                 validate(value, opts) {
-                    if (value && value.a && value.l1 && value.l1.b) {
-                        if (opts.exige3 && (value.a + value.l1.b !== 3)) return "soma deve ser 3"
+                    if (value && value.a && value.l1 && value.l1.l2 && value.l1.l2.b) {
+                        if (opts.exige3 && (value.a + value.l1.l2.b !== 3)) return "soma deve ser 3"
                     } else if (!opts.optional) return "requerido"
                     return null
                 },
@@ -228,9 +234,9 @@ describe("types", () => {
                 expect(_complexType.validate({ a: 1 } as any, { exige3: false })).toBe("requerido")
                 expect(_complexType.validate({ b: 1 } as any, { exige3: false })).toBe("requerido")
                 expect(_complexType.validate(undefined as any, { exige3: false, optional: true })).toBeNull()
-                expect(_complexType.validate({ a: 5, l1: { b: 2 } }, { exige3: false })).toBeNull()
-                expect(_complexType.validate({ a: 5, l1: { b: 2 } }, { exige3: true })).toBe("soma deve ser 3")
-                expect(_complexType.validate({ a: 5, l1: { b: -2 } }, { exige3: true })).toBeNull()
+                expect(_complexType.validate({ a: 5, l1: { l2: { b: 2 } } }, { exige3: false })).toBeNull()
+                expect(_complexType.validate({ a: 5, l1: { l2: { b: 2 } } }, { exige3: true })).toBe("soma deve ser 3")
+                expect(_complexType.validate({ a: 5, l1: { l2: { b: -2 } } }, { exige3: true })).toBeNull()
             })
 
             it("new field", () => {
@@ -251,13 +257,13 @@ describe("types", () => {
                 expect(cf.value).toBe(undefined)
                 expect(cf.validate()).toBe("requerido")
 
-                fv = { a: 7, l1: { b: 4 } }
-                expect(cf.value).toEqual({ a: 7, l1: { b: 4 } })
+                fv = { a: 7, l1: { l2: { b: 4 } } }
+                expect(cf.value).toEqual({ a: 7, l1: { l2: { b: 4 } } })
                 expect(cf.validate()).toBe("soma deve ser 3")
 
-                cf.value = { a: 7, l1: { b: -4 } }
-                expect(fv).toEqual({ a: 7, l1: { b: -4 } })
-                expect(cf.value).toEqual({ a: 7, l1: { b: -4 } })
+                cf.value = { a: 7, l1: { l2: { b: -4 } } }
+                expect(fv).toEqual({ a: 7, l1: { l2: { b: -4 } } })
+                expect(cf.value).toEqual({ a: 7, l1: { l2: { b: -4 } } })
                 expect(cf.validate()).toBeNull()
             })
         })
