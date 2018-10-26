@@ -2,6 +2,7 @@
 import * as React from "react"
 import "@hoda5/extensions"
 import { h5debug } from "@hoda5/h5debug"
+import { DocDef, DocFields } from "./types"
 
 export type PathPart<T> = keyof T
   | { [name: string]: (value: any) => (false | string | GUID | Array<string | GUID>) }
@@ -105,11 +106,11 @@ export function distribuitedDatabase<DOCS extends {
   return null as any
 }
 
-export function mergeableObject<T extends object>() {
+export function mergeableObject<F extends DocFields, D extends DocDef<F>>(docDef: D) {
   return {
     define<
       M extends {
-        [name: string]: (this: Subscription<T, {}, M, P>, ...args: any[]) => any,
+        [name: string]: (this: Subscription<typeof docDef.purefields, {}, M, P>, ...args: any[]) => any,
       },
       P extends QueryParams,
       >(opts: {
@@ -117,9 +118,9 @@ export function mergeableObject<T extends object>() {
         methods: M,
         params: P,
         repositories: Repository[],
-        validate?(data: T): void,
+        validate?(data: typeof docDef.purefields): void,
       }) {
-      return defineMergeableObject<T, {}, {}, M, P>(opts)
+      return defineMergeableObject<typeof docDef.purefields, {}, {}, M, P>(opts)
     },
     // withComputation<C extends object>( fn: (data: T)
   }
@@ -446,44 +447,4 @@ export function resolveQueryPath<P extends QueryParams>(
   })
   // if (h5debug.h5doc) h5debug.h5doc(qry.name, qry.paramValues, "resolveQueryPath", r)
   return arr.join("/")
-}
-
-
-export interface DocDecl<FIELDS extends DocFields> {
-  name: string,
-  fields: FIELDS,
-}
-
-export interface DocDef<FIELDS extends DocFields> {
-  name: string,
-  fields: FIELDS,
-  data: PureField<FIELDS>
-}
-
-export type PureField<T> =
-  T extends DocField<infer K> ? K :
-  T extends DocFields ? {
-      [name in keyof T]: PureField<T[name]>
-  }
-  : unknown
-
-export interface DocFields {
-  [name: string]: DocField<any>
-}
-
-export interface DocField<T> {
-  fieldName: string
-  fieldType: DocFieldType<T>
-  value: T
-}
-
-export interface DocFieldType<T> {
-  fieldType: T
-  new(): DocField<T>
-  validate(v: T): boolean
-}
-
-export function defDoc<FIELDS extends DocFields>
-  (dd: DocDecl<FIELDS>): DocDef<FIELDS> {
-  return null as any
 }

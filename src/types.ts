@@ -25,14 +25,14 @@ export interface DocFields {
     [name: string]: DocField<any, any> | ComplexDef<any>
 }
 
-interface DocField<T, OPTS> {
+export interface DocField<T, OPTS> {
     fieldName: string
     fieldType: DocFieldType<T, OPTS>
     value: T,
     validate(): string | null,
 }
 
-interface DocFieldArray<T, ITEMOPTS> {
+export interface DocFieldArray<T, ITEMOPTS> {
     fieldName: string
     fieldType: {
         typeName: string,
