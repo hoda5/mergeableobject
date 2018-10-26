@@ -144,6 +144,19 @@ export function configField<T, OPTS>(field: DocField<T, OPTS>, opts: {
         },
     })
 }
+export function configArray<T, OPTS>(field: DocFieldArray<T, OPTS>, opts: {
+    name: string,
+    onGet(): T[],
+    onSet(value: T[]): void,
+}) {
+    Object.defineProperties(field, {
+        fieldName: { value: opts.name },
+        value: {
+            get: opts.onGet,
+            set: opts.onSet,
+        },
+    })
+}
 
 export function defDoc<FIELDS extends DocFields>
     (dd: DocDecl<FIELDS>): DocDef<FIELDS> {

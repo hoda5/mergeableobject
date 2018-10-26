@@ -1,4 +1,4 @@
-import { defType, configField, typeByName, stringType, numberType, complex } from "./types"
+import { defType, configField, typeByName, stringType, numberType, complex, configArray } from "./types"
 
 describe("types", () => {
     describe("defType", () => {
@@ -60,20 +60,26 @@ describe("types", () => {
             expect(i.fieldType.typeName).toBe("t")
         })
         it("array", () => {
-            const i = t.array({ itemOpts: {} })
-            configField(i, {
+            const i = t.array({ minItems: 2, itemOpts: {} })
+            let arr: number[] = []
+            configArray(i, {
                 name: "i",
                 onGet() {
                     return arr
                 },
                 onSet(value) {
-                    arr=value
-                }
+                    arr = value
+                },
             })
+            expect(i.fieldName).toBe("i")
             expect(i.fieldType.typeName).toBe("t[]")
             expect(i.itemType.typeName).toBe("t")
-            // i.push()
-            // i.pop()
+            expect(i.value).toBe(arr)
+            expect(i.validate()).toBe("Obrigatório")
+            i.value.push(1)
+            expect(i.validate()).toBe("Mínimo: 2")
+            i.value.push(2)
+            expect(i.validate()).toBeNull()
         })
 
         it("typeByName", () => {
@@ -95,8 +101,8 @@ describe("types", () => {
             }).toThrow(/Duplicated typename/g)
         })
     })
-    describe("internal types", () => {
-        it("stringType", () => {
+    describe("stringType", () => {
+        it("single", () => {
             const n = stringType({
                 minLen: 2,
                 maxLen: 4,
@@ -126,7 +132,32 @@ describe("types", () => {
             expect(n.value).toBe("ab")
             expect(n.validate()).toBeNull()
         })
-        it("numberType", () => {
+
+        it("array", () => {
+            const i = stringType.array({ maxItems: 1, itemOpts: {} })
+            let arr: string[] = []
+            configArray(i, {
+                name: "i",
+                onGet() {
+                    return arr
+                },
+                onSet(value) {
+                    arr = value
+                },
+            })
+            expect(i.fieldName).toBe("i")
+            expect(i.fieldType.typeName).toBe("string[]")
+            expect(i.itemType.typeName).toBe("string")
+            expect(i.value).toBe(arr)
+            expect(i.validate()).toBe("Obrigatório")
+            i.value.push("a")
+            expect(i.validate()).toBeNull()
+            i.value.push("b")
+            expect(i.validate()).toBe("Máximo: 1")
+        })
+    })
+    describe("numberType", () => {
+        it("single", () => {
             const n = numberType({
                 min: 2,
                 max: 4,
@@ -155,6 +186,29 @@ describe("types", () => {
             expect(nv).toBe(2)
             expect(n.value).toBe(2)
             expect(n.validate()).toBeNull()
+        })
+
+        it("array", () => {
+            const i = numberType.array({ optional: true, maxItems: 1, itemOpts: {} })
+            let arr: number[] = []
+            configArray(i, {
+                name: "i",
+                onGet() {
+                    return arr
+                },
+                onSet(value) {
+                    arr = value
+                },
+            })
+            expect(i.fieldName).toBe("i")
+            expect(i.fieldType.typeName).toBe("number[]")
+            expect(i.itemType.typeName).toBe("number")
+            expect(i.value).toBe(arr)
+            expect(i.validate()).toBeNull()
+            i.value.push(1)
+            expect(i.validate()).toBeNull()
+            i.value.push(2)
+            expect(i.validate()).toBe("Máximo: 1")
         })
     })
 
@@ -217,6 +271,32 @@ describe("types", () => {
                 expect(fv).toEqual({ a: 7, b: -4 })
                 expect(cf.value).toEqual({ a: 7, b: -4 })
                 expect(cf.validate()).toBeNull()
+            })
+
+            it("array", () => {
+                const i = _complexType.array({ optional: true, maxItems: 1, itemOpts: { exige3: true } })
+                let arr: Array<typeof _complexType.sample> = []
+                configArray(i, {
+                    name: "i",
+                    onGet() {
+                        return arr
+                    },
+                    onSet(value) {
+                        arr = value
+                    },
+                })
+                expect(i.fieldName).toBe("i")
+                expect(i.fieldType.typeName).toBe("_ol[]")
+                expect(i.itemType.typeName).toBe("_ol")
+                expect(i.value).toBe(arr)
+                expect(i.validate()).toBeNull()
+                i.value.push({ a: 2, b: 5 })
+                expect(i.validate()).toBe("soma deve ser 3")
+                i.value.pop()
+                i.value.push({ a: -2, b: 5 })
+                expect(i.validate()).toBeNull()
+                i.value.push({ a: -2, b: 5 })
+                expect(i.validate()).toBe("Máximo: 1")
             })
         })
 
@@ -286,6 +366,32 @@ describe("types", () => {
                 expect(fv).toEqual({ a: 7, l1: { l2: { b: -4 } } })
                 expect(cf.value).toEqual({ a: 7, l1: { l2: { b: -4 } } })
                 expect(cf.validate()).toBeNull()
+            })
+
+            it("array", () => {
+                const i = _complexType.array({ optional: true, maxItems: 1, itemOpts: { exige3: true } })
+                let arr: Array<typeof _complexType.sample> = []
+                configArray(i, {
+                    name: "i",
+                    onGet() {
+                        return arr
+                    },
+                    onSet(value) {
+                        arr = value
+                    },
+                })
+                expect(i.fieldName).toBe("i")
+                expect(i.fieldType.typeName).toBe("_ml[]")
+                expect(i.itemType.typeName).toBe("_ml")
+                expect(i.value).toBe(arr)
+                expect(i.validate()).toBeNull()
+                i.value.push({ a: 2, l1: { l2: { b: 5 } } })
+                expect(i.validate()).toBe("soma deve ser 3")
+                i.value.pop()
+                i.value.push({ a: -2, l1: { l2: { b: 5 } } })
+                expect(i.validate()).toBeNull()
+                i.value.push({ a: -2, l1: { l2: { b: 5 } } })
+                expect(i.validate()).toBe("Máximo: 1")
             })
         })
     })
