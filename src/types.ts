@@ -25,11 +25,16 @@ export interface DocFields {
     [name: string]: DocField<any, any> | ComplexDef<any>
 }
 
+function isComplex<T, OPTS>(field: DocField<T, OPTS> | ComplexDef<T>): field is ComplexDef<T> {
+    return !!(field as ComplexDef<T>).validateChildren
+}
+
 export interface DocField<T, OPTS> {
     fieldName: string
     fieldType: DocFieldType<T, OPTS>
+    opts: OPTS,
     value: T,
-    validate(): string | null,
+    validate(): string | undefined,
 }
 
 export interface DocFieldArray<T, ITEMOPTS> {
@@ -39,7 +44,7 @@ export interface DocFieldArray<T, ITEMOPTS> {
     }
     itemType: DocFieldType<T, ITEMOPTS>
     value: T[]
-    validate(): string | null,
+    validate(): string | undefined,
 }
 
 // interface DocFieldComplex<FIELDS extends DocFields> extends DocField<PureField<FIELDS>> {
@@ -51,7 +56,7 @@ interface DocFieldType<T, OPTS extends DefaultFieldOpts> {
     sample: T,
     single: DocFieldInstance<T, OPTS & DefaultFieldOpts>
     array(opts: DefaultArrayOpts<OPTS>): DocFieldArray<T, OPTS>
-    validate(v: T, opts: OPTS): string | null,
+    validate(v: T, opts: OPTS): string | undefined,
 }
 
 export interface DefaultFieldOpts {
@@ -75,7 +80,7 @@ export const typeByName: { [name: string]: DocFieldType<any, any> } = {}
 export function defType<T, OPTS>(typeOpts: {
     typeName: string,
     sample: T,
-    validate(value: T, opts: OPTS & DefaultFieldOpts): string | null,
+    validate(value: T, opts: OPTS & DefaultFieldOpts): string | undefined,
 }): DocFieldType<T, OPTS & DefaultFieldOpts>
     & DocFieldInstance<T, OPTS> {
     const { typeName, sample, validate } = typeOpts
@@ -97,6 +102,7 @@ export function defType<T, OPTS>(typeOpts: {
             fieldName: undefined as any,
             value: undefined as any,
             fieldType: type,
+            opts: fieldOpts,
             validate() {
                 return type.validate(f.value, fieldOpts)
             },
@@ -117,14 +123,14 @@ export function defType<T, OPTS>(typeOpts: {
                 if (l > 0) {
                     if (arrayOpts.minItems && l < arrayOpts.minItems) return "Mínimo: " + arrayOpts.minItems
                     if (arrayOpts.maxItems && l > arrayOpts.maxItems) return "Máximo: " + arrayOpts.maxItems
-                    let err: string | null = null
+                    let err: string | undefined
                     v.some((i) => {
                         err = type.validate(i, arrayOpts.itemOpts)
-                        return err !== null
+                        return err !== undefined
                     })
                     if (err) return err
                 } else if (!arrayOpts.optional) return "Obrigatório"
-                return null
+                return undefined
             },
         }
         return a
@@ -175,7 +181,7 @@ export const stringType = defType<string, {
             if (opts.maxLen && value.length > opts.maxLen) return "Tamanho máximo: " + opts.maxLen
         } else if (value) return "Tipo do dado inválido (" + typeof value + ")"
         else return "Obrigatório"
-        return null
+        return undefined
     },
 })
 
@@ -191,7 +197,32 @@ export const numberType = defType<number, {
             if (opts.max && value > opts.max) return "Máximo: " + opts.max
         } else if (value) return "Tipo do dado inválido (" + typeof value + ")"
         else return "Obrigatório"
-        return null
+        return undefined
+    },
+})
+
+export const DateISOType = defType<DateISO, {
+    min?: DateISO,
+    max?: DateISO,
+}>({
+    typeName: "DateISO",
+    sample: "2018-10-27T12:00:00.000Z".toDateISO(),
+    validate(value, opts) {
+        if (typeof value === "string") {
+            if (opts.min && value < opts.min) return "Mínimo: " + opts.min
+            if (opts.max && value > opts.max) return "Máximo: " + opts.max
+        } else if (value) return "Tipo do dado inválido (" + typeof value + ")"
+        else return "Obrigatório"
+        return undefined
+    },
+})
+
+export const booleanType = defType<boolean, {}>({
+    typeName: "boolean",
+    sample: false,
+    validate(value, opts) {
+        if (typeof value !== "boolean") return "Obrigatório"
+        return undefined
     },
 })
 
@@ -200,34 +231,71 @@ export interface ComplexDef<FIELDS> {
         fields: FIELDS,
         sample: PureField<FIELDS>,
     },
+    validateChildren(values: PureField<FIELDS>): string | undefined,
     defType<OPTS>(typeOpts: {
         typeName: string,
-        validate?(value: PureField<FIELDS>, opts: OPTS & DefaultFieldOpts): string | null,
+        validate?(value: PureField<FIELDS>, opts: OPTS & DefaultFieldOpts): string | undefined,
     }): DocFieldType<PureField<FIELDS>, OPTS & DefaultFieldOpts>
         & DocFieldInstance<PureField<FIELDS>, OPTS & DefaultFieldOpts>
 }
 
 export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexDef<FIELDS> {
     const sample = makeDefault()
-    return {
+    const _complex: ComplexDef<FIELDS> = {
         fieldType: {
             fields,
             sample,
         },
+        validateChildren(values: PureField<FIELDS>): string | undefined {
+            return _validateChildren("", fields, values)
+        },
         defType<OPTS>(typeOpts: {
             typeName: string,
-            validate?(value: PureField<FIELDS>, opts: OPTS & DefaultFieldOpts): string | null,
+            validate?(value: PureField<FIELDS>, opts: OPTS & DefaultFieldOpts): string | undefined,
         }): DocFieldType<PureField<FIELDS>, OPTS & DefaultFieldOpts>
             & DocFieldInstance<PureField<FIELDS>, OPTS & DefaultFieldOpts> {
 
-            const v = typeOpts.validate ? typeOpts.validate :
-                (value: PureField<FIELDS>, fieldOpts: DefaultFieldOpts) => {
-                    if (!(value || fieldOpts.optional)) return "Obrigatório"
-                    return null
-                }
-            return defType<PureField<FIELDS>, OPTS>({ ...typeOpts, validate: v, sample })
+            const validate = typeOpts.validate
+
+            return defType<PureField<FIELDS>, OPTS & DefaultFieldOpts>({
+                ...typeOpts,
+                sample,
+                validate(value: PureField<FIELDS>, fieldOpts: OPTS & DefaultFieldOpts) {
+                    if (value) {
+                        const err = _complex.validateChildren(value)
+                        if (err) return err
+                        if (validate) return validate(value, fieldOpts)
+                    } else if (!fieldOpts.optional) return "Obrigatório"
+                    return undefined
+                },
+            })
         },
     }
+    return _complex
+
+    function _validateChildren(
+        path: string,
+        pfields: { [name: string]: DocField<any, any> | ComplexDef<any> },
+        pvalues: any): string | undefined {
+        let err: string | undefined
+        pvalues = pvalues || {}
+        Object.keys(pfields).some((p) => {
+            const f = pfields[p]
+            const v = pvalues[p]
+            if (isComplex(f)) {
+                err = _validateChildren([path, p, "/"].join(""), f.fieldType.fields, v)
+            } else {
+                err = f.fieldType.validate(v, f.opts)
+                if (err) {
+                    err = [err, " [", path, p, "]"].join("")
+                    return true
+                }
+            }
+            return false
+        })
+        return err
+    }
+
     function makeDefault() {
         const r: PureField<FIELDS> = {} as any
         Object.keys(fields).forEach((p) => {
@@ -236,15 +304,3 @@ export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexDef<FI
         return r
     }
 }
-
-// export const numberType: DocFieldType<number> = null as any
-
-// const Cli = defDoc({
-//     name: "cli",
-//     fields: {
-//         nome: new strType()
-//     }
-// })
-
-// const _fields = Cli.fields
-// _fields.nome.value = "1"

@@ -1,4 +1,7 @@
-import { defType, configField, typeByName, stringType, numberType, complex, configArray } from "./types"
+import {
+    defType, configField, typeByName, complex, configArray,
+    stringType, numberType, booleanType, DateISOType,
+} from "./types"
 
 describe("types", () => {
     describe("defType", () => {
@@ -11,20 +14,20 @@ describe("types", () => {
                 if (typeof value === "number") {
                     if (opts.min && value < opts.min) return "abaixo"
                 } else if (!opts.optional) return "requerido"
-                return null
+                return undefined
             },
         })
 
         it("validate", () => {
             expect(t.sample).toBe(-1)
             expect(t.validate(undefined as any, {})).toBe("requerido")
-            expect(t.validate(undefined as any, { optional: true })).toBeNull()
-            expect(t.validate(1, {})).toBeNull()
-            expect(t.validate(1, { optional: true })).toBeNull()
+            expect(t.validate(undefined as any, { optional: true })).toBeUndefined()
+            expect(t.validate(1, {})).toBeUndefined()
+            expect(t.validate(1, { optional: true })).toBeUndefined()
             expect(t.validate(1, { min: 2, optional: true })).toBe("abaixo")
             expect(t.validate(1, { min: 2 })).toBe("abaixo")
-            expect(t.validate(2, { min: 2, optional: true })).toBeNull()
-            expect(t.validate(2, { min: 2 })).toBeNull()
+            expect(t.validate(2, { min: 2, optional: true })).toBeUndefined()
+            expect(t.validate(2, { min: 2 })).toBeUndefined()
         })
 
         it("new field", () => {
@@ -52,7 +55,7 @@ describe("types", () => {
             f.value = 2
             expect(fv).toBe(2)
             expect(f.value).toBe(2)
-            expect(f.validate()).toBeNull()
+            expect(f.validate()).toBeUndefined()
         })
 
         it("single", () => {
@@ -79,7 +82,7 @@ describe("types", () => {
             i.value.push(1)
             expect(i.validate()).toBe("Mínimo: 2")
             i.value.push(2)
-            expect(i.validate()).toBeNull()
+            expect(i.validate()).toBeUndefined()
         })
 
         it("typeByName", () => {
@@ -95,12 +98,13 @@ describe("types", () => {
                         if (typeof value === "number") {
                             if (opts.min && value < opts.min) return "abaixo"
                         } else if (!opts.optional) return "requerido"
-                        return null
+                        return undefined
                     },
                 })
             }).toThrow(/Duplicated typename/g)
         })
     })
+
     describe("stringType", () => {
         it("single", () => {
             const n = stringType({
@@ -130,7 +134,7 @@ describe("types", () => {
             n.value = "ab"
             expect(nv).toBe("ab")
             expect(n.value).toBe("ab")
-            expect(n.validate()).toBeNull()
+            expect(n.validate()).toBeUndefined()
         })
 
         it("array", () => {
@@ -151,11 +155,12 @@ describe("types", () => {
             expect(i.value).toBe(arr)
             expect(i.validate()).toBe("Obrigatório")
             i.value.push("a")
-            expect(i.validate()).toBeNull()
+            expect(i.validate()).toBeUndefined()
             i.value.push("b")
             expect(i.validate()).toBe("Máximo: 1")
         })
     })
+
     describe("numberType", () => {
         it("single", () => {
             const n = numberType({
@@ -185,7 +190,7 @@ describe("types", () => {
             n.value = 2
             expect(nv).toBe(2)
             expect(n.value).toBe(2)
-            expect(n.validate()).toBeNull()
+            expect(n.validate()).toBeUndefined()
         })
 
         it("array", () => {
@@ -204,10 +209,118 @@ describe("types", () => {
             expect(i.fieldType.typeName).toBe("number[]")
             expect(i.itemType.typeName).toBe("number")
             expect(i.value).toBe(arr)
-            expect(i.validate()).toBeNull()
+            expect(i.validate()).toBeUndefined()
             i.value.push(1)
-            expect(i.validate()).toBeNull()
+            expect(i.validate()).toBeUndefined()
             i.value.push(2)
+            expect(i.validate()).toBe("Máximo: 1")
+        })
+    })
+
+    describe("booleanType", () => {
+        it("single", () => {
+            const n = booleanType({})
+            let nv: boolean
+            configField(n, {
+                name: "n",
+                onGet() {
+                    return nv
+                },
+                onSet(value) {
+                    nv = value
+                },
+            })
+            expect(n.fieldName).toBe("n")
+            expect(n.fieldType.typeName).toBe("boolean")
+
+            expect(n.value).toBe(undefined)
+            expect(n.validate()).toBe("Obrigatório")
+
+            nv = false
+            expect(n.value).toBeFalsy()
+            expect(n.validate()).toBeUndefined()
+
+            n.value = true
+            expect(nv).toBeTruthy()
+            expect(n.value).toBeTruthy()
+            expect(n.validate()).toBeUndefined()
+        })
+
+        it("array", () => {
+            const i = booleanType.array({ optional: true, maxItems: 1, itemOpts: {} })
+            let arr: boolean[] = []
+            configArray(i, {
+                name: "i",
+                onGet() {
+                    return arr
+                },
+                onSet(value) {
+                    arr = value
+                },
+            })
+            expect(i.fieldName).toBe("i")
+            expect(i.fieldType.typeName).toBe("boolean[]")
+            expect(i.itemType.typeName).toBe("boolean")
+            expect(i.value).toBe(arr)
+            expect(i.validate()).toBeUndefined()
+            i.value.push(false)
+            expect(i.validate()).toBeUndefined()
+            i.value.push(true)
+            expect(i.validate()).toBe("Máximo: 1")
+        })
+    })
+
+    describe("dateISOType", () => {
+        it("single", () => {
+            const n = DateISOType({
+                min: "2018-01-01T00:00:00.0Z".toDateISO(),
+            })
+            let nv: DateISO
+            configField(n, {
+                name: "n",
+                onGet() {
+                    return nv
+                },
+                onSet(value) {
+                    nv = value
+                },
+            })
+            expect(n.fieldName).toBe("n")
+            expect(n.fieldType.typeName).toBe("DateISO")
+
+            expect(n.value).toBe(undefined)
+            expect(n.validate()).toBe("Obrigatório")
+
+            nv = "2017-01-10T00:00:00.0Z".toDateISO()
+            expect(n.value).toBe("2017-01-10T00:00:00.000Z")
+            expect(n.validate()).toBe("Mínimo: 2018-01-01T00:00:00.000Z")
+
+            n.value = "2018-01-01T00:00:00.0Z".toDateISO()
+            expect(nv).toBe("2018-01-01T00:00:00.000Z")
+            expect(n.value).toBe("2018-01-01T00:00:00.000Z")
+            expect(n.validate()).toBeUndefined()
+        })
+
+        it("array", () => {
+            const i = DateISOType.array({ optional: true, maxItems: 1, itemOpts: {} })
+            let arr: DateISO[] = []
+            configArray(i, {
+                name: "i",
+                onGet() {
+                    return arr
+                },
+                onSet(value) {
+                    arr = value
+                },
+            })
+            expect(i.fieldName).toBe("i")
+            expect(i.fieldType.typeName).toBe("DateISO[]")
+            expect(i.itemType.typeName).toBe("DateISO")
+            expect(i.value).toBe(arr)
+            expect(i.validate()).toBeUndefined()
+            i.value.push("2018-01-01T00:00:00.0Z".toDateISO())
+            expect(i.validate()).toBeUndefined()
+            i.value.push("2017-01-10T00:00:00.0Z".toDateISO())
             expect(i.validate()).toBe("Máximo: 1")
         })
     })
@@ -215,7 +328,7 @@ describe("types", () => {
     describe("complexType", () => {
         describe("one level", () => {
             const _ol = complex({
-                a: numberType({}),
+                a: numberType({ min: 2 }),
                 b: numberType({}),
             })
 
@@ -230,19 +343,20 @@ describe("types", () => {
                 validate(value, opts) {
                     if (value && value.a && value.b) {
                         if (opts.exige3 && (value.a + value.b !== 3)) return "soma deve ser 3"
-                    } else if (!opts.optional) return "requerido"
-                    return null
+                    }
+                    return undefined
                 },
             })
 
             it("validate", () => {
-                expect(_complexType.validate(undefined as any, { exige3: false })).toBe("requerido")
-                expect(_complexType.validate({ a: 1 } as any, { exige3: false })).toBe("requerido")
-                expect(_complexType.validate({ b: 1 } as any, { exige3: false })).toBe("requerido")
-                expect(_complexType.validate(undefined as any, { exige3: false, optional: true })).toBeNull()
-                expect(_complexType.validate({ a: 5, b: 2 }, { exige3: false })).toBeNull()
+                expect(_complexType.validate(undefined as any, { exige3: false })).toBe("Obrigatório")
+                expect(_complexType.validate({ a: 2 } as any, { exige3: false })).toBe("Obrigatório [b]")
+                expect(_complexType.validate({ b: 1 } as any, { exige3: false })).toBe("Obrigatório [a]")
+                expect(_complexType.validate({ a: 1, b: 2 } as any, { exige3: false })).toBe("Mínimo: 2 [a]")
+                expect(_complexType.validate(undefined as any, { exige3: false, optional: true })).toBeUndefined()
+                expect(_complexType.validate({ a: 5, b: 2 }, { exige3: false })).toBeUndefined()
                 expect(_complexType.validate({ a: 5, b: 2 }, { exige3: true })).toBe("soma deve ser 3")
-                expect(_complexType.validate({ a: 5, b: -2 }, { exige3: true })).toBeNull()
+                expect(_complexType.validate({ a: 5, b: -2 }, { exige3: true })).toBeUndefined()
             })
 
             it("new field", () => {
@@ -261,7 +375,7 @@ describe("types", () => {
                 expect(cf.fieldType.typeName).toBe("_ol")
 
                 expect(cf.value).toBe(undefined)
-                expect(cf.validate()).toBe("requerido")
+                expect(cf.validate()).toBe("Obrigatório")
 
                 fv = { a: 7, b: 4 }
                 expect(cf.value).toEqual({ a: 7, b: 4 })
@@ -270,7 +384,7 @@ describe("types", () => {
                 cf.value = { a: 7, b: -4 }
                 expect(fv).toEqual({ a: 7, b: -4 })
                 expect(cf.value).toEqual({ a: 7, b: -4 })
-                expect(cf.validate()).toBeNull()
+                expect(cf.validate()).toBeUndefined()
             })
 
             it("array", () => {
@@ -289,12 +403,12 @@ describe("types", () => {
                 expect(i.fieldType.typeName).toBe("_ol[]")
                 expect(i.itemType.typeName).toBe("_ol")
                 expect(i.value).toBe(arr)
-                expect(i.validate()).toBeNull()
+                expect(i.validate()).toBeUndefined()
                 i.value.push({ a: 2, b: 5 })
                 expect(i.validate()).toBe("soma deve ser 3")
                 i.value.pop()
-                i.value.push({ a: -2, b: 5 })
-                expect(i.validate()).toBeNull()
+                i.value.push({ a: 2, b: 1 })
+                expect(i.validate()).toBeUndefined()
                 i.value.push({ a: -2, b: 5 })
                 expect(i.validate()).toBe("Máximo: 1")
             })
@@ -305,7 +419,7 @@ describe("types", () => {
                 a: numberType({}),
                 l1: complex({
                     l2: complex({
-                        b: numberType({}),
+                        b: numberType({ min: 1 }),
                     }),
                 }),
             })
@@ -325,19 +439,23 @@ describe("types", () => {
                 validate(value, opts) {
                     if (value && value.a && value.l1 && value.l1.l2 && value.l1.l2.b) {
                         if (opts.exige3 && (value.a + value.l1.l2.b !== 3)) return "soma deve ser 3"
-                    } else if (!opts.optional) return "requerido"
-                    return null
+                    }
+                    return undefined
                 },
             })
 
             it("validate", () => {
-                expect(_complexType.validate(undefined as any, { exige3: false })).toBe("requerido")
-                expect(_complexType.validate({ a: 1 } as any, { exige3: false })).toBe("requerido")
-                expect(_complexType.validate({ b: 1 } as any, { exige3: false })).toBe("requerido")
-                expect(_complexType.validate(undefined as any, { exige3: false, optional: true })).toBeNull()
-                expect(_complexType.validate({ a: 5, l1: { l2: { b: 2 } } }, { exige3: false })).toBeNull()
+                expect(_complexType.validate(undefined as any, { exige3: false })).toBe("Obrigatório")
+                expect(_complexType.validate({ a: 1 } as any, { exige3: false })).toBe("Obrigatório [l1/l2/b]")
+                expect(_complexType.validate({ l1: { l2: { b: 2 } } } as any, { exige3: true })).toBe("Obrigatório [a]")
+                expect(_complexType.validate({ a: 1, l1: { l2: { b: 0 } } } as any,
+                    { exige3: false })).toBe("Mínimo: 1 [l1/l2/b]")
+                expect(_complexType.validate(undefined as any, { exige3: false, optional: true })).toBeUndefined()
+                expect(_complexType.validate({ a: 5, l1: { l2: { b: 2 } } }, { exige3: false })).toBeUndefined()
                 expect(_complexType.validate({ a: 5, l1: { l2: { b: 2 } } }, { exige3: true })).toBe("soma deve ser 3")
-                expect(_complexType.validate({ a: 5, l1: { l2: { b: -2 } } }, { exige3: true })).toBeNull()
+                expect(_complexType.validate({ a: 5, l1: { l2: { b: -2 } } }, { exige3: true }))
+                    .toBe("Mínimo: 1 [l1/l2/b]")
+                expect(_complexType.validate({ a: 1, l1: { l2: { b: 2 } } }, { exige3: true })).toBeUndefined()
             })
 
             it("new field", () => {
@@ -356,7 +474,7 @@ describe("types", () => {
                 expect(cf.fieldType.typeName).toBe("_ml")
 
                 expect(cf.value).toBe(undefined)
-                expect(cf.validate()).toBe("requerido")
+                expect(cf.validate()).toBe("Obrigatório")
 
                 fv = { a: 7, l1: { l2: { b: 4 } } }
                 expect(cf.value).toEqual({ a: 7, l1: { l2: { b: 4 } } })
@@ -365,7 +483,12 @@ describe("types", () => {
                 cf.value = { a: 7, l1: { l2: { b: -4 } } }
                 expect(fv).toEqual({ a: 7, l1: { l2: { b: -4 } } })
                 expect(cf.value).toEqual({ a: 7, l1: { l2: { b: -4 } } })
-                expect(cf.validate()).toBeNull()
+                expect(cf.validate()).toBe("Mínimo: 1 [l1/l2/b]")
+
+                cf.value = { a: 2, l1: { l2: { b: 1 } } }
+                expect(fv).toEqual({ a: 2, l1: { l2: { b: 1 } } })
+                expect(cf.value).toEqual({ a: 2, l1: { l2: { b: 1 } } })
+                expect(cf.validate()).toBeUndefined()
             })
 
             it("array", () => {
@@ -384,40 +507,15 @@ describe("types", () => {
                 expect(i.fieldType.typeName).toBe("_ml[]")
                 expect(i.itemType.typeName).toBe("_ml")
                 expect(i.value).toBe(arr)
-                expect(i.validate()).toBeNull()
+                expect(i.validate()).toBeUndefined()
                 i.value.push({ a: 2, l1: { l2: { b: 5 } } })
                 expect(i.validate()).toBe("soma deve ser 3")
                 i.value.pop()
                 i.value.push({ a: -2, l1: { l2: { b: 5 } } })
-                expect(i.validate()).toBeNull()
+                expect(i.validate()).toBeUndefined()
                 i.value.push({ a: -2, l1: { l2: { b: 5 } } })
                 expect(i.validate()).toBe("Máximo: 1")
             })
         })
     })
 })
-/*
-
-export function defDoc<FIELDS extends DocFields>
-    (dd: DocDecl<FIELDS>): DocDef<FIELDS> {
-    return null as any
-}
-
-export function complexType<FIELDS extends DocFields>
-    (fields: FIELDS): DocFieldComplex<FIELDS> {
-    return null as any
-}
-export const stringType: DocFieldType<string> = null as any
-export const numberType: DocFieldType<number> = null as any
-
-// const Cli = defDoc({
-//     name: "cli",
-//     fields: {
-//         nome: new strType()
-//     }
-// })
-
-// const _fields = Cli.fields
-// _fields.nome.value = "1"
-
-*/
