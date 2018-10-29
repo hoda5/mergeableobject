@@ -1,6 +1,6 @@
 import {
     defType, configField, typeByName, complex, configArray,
-    stringType, numberType, booleanType, DateISOType,
+    stringType, numberType, booleanType, DateISOType, options,
 } from "./types"
 
 describe("types", () => {
@@ -321,6 +321,109 @@ describe("types", () => {
             i.value.push("2018-01-01T00:00:00.0Z".toDateISO())
             expect(i.validate()).toBeUndefined()
             i.value.push("2017-01-10T00:00:00.0Z".toDateISO())
+            expect(i.validate()).toBe("Máximo: 1")
+        })
+    })
+
+    describe("enumType", () => {
+        const _ol = options({
+            op1: {
+                value: 1,
+                text: "Um",
+            },
+            op2: {
+                value: 2,
+                text: "Dois",
+            },
+        })
+
+        it("options", () => {
+
+            type TB1 = typeof _ol.op1
+            type TB1OK = TB1 extends number ? "OK" : "_ol.op1 devia ser NUMBER"
+            const tb1ok: TB1OK = "OK"
+            expect(tb1ok).toBe("OK")
+            expect(_ol.op1).toBe(1)
+
+            type TB2 = typeof _ol.op2
+            type TB2OK = TB2 extends number ? "OK" : "_ol.op2 devia ser NUMBER"
+            const tb2ok: TB2OK = "OK"
+            expect(tb2ok).toBe("OK")
+            expect(_ol.op2).toBe(2)
+
+            expect(_ol.options).toEqual([
+                {
+                    id: "op1",
+                    value: 1,
+                    text: "um",
+                },
+                {
+                    id: "op2",
+                    value: 2,
+                    text: "dois",
+                },
+            ])
+            expect(_ol.sample).toEqual(1)
+        })
+
+        it("validate", () => {
+            expect(_ol.validate(undefined as any, {})).toBe("Obrigatório")
+            expect(_ol.validate(undefined as any, { optional: false })).toBe("Obrigatório")
+            expect(_ol.validate(_ol.op1, {})).toBe("Obrigatório")
+            expect(_ol.validate(_ol.op2, {})).toBe("Obrigatório")
+        })
+
+        it("new field", () => {
+            const f = _ol({})
+            let fv: typeof _ol.sample
+            configField(f, {
+                name: "f",
+                onGet() {
+                    return fv
+                },
+                onSet(value) {
+                    fv = value
+                },
+            })
+            expect(f.fieldName).toBe("cf")
+            expect(f.fieldType.typeName).toBe("_ol")
+
+            expect(f.value).toBe(undefined)
+            expect(f.validate()).toBe("Obrigatório")
+
+            fv = 3
+            expect(f.value).toEqual(3)
+            expect(f.validate()).toBe("soma deve ser 3")
+
+            f.value = _ol.op1
+            expect(fv).toEqual(1)
+            expect(f.value).toEqual(1)
+            expect(f.validate()).toBeUndefined()
+        })
+
+        it("array", () => {
+            const i = _ol.array({ optional: true, maxItems: 1, itemOpts: {} })
+            let arr: Array<typeof _ol.sample> = []
+            configArray(i, {
+                name: "i",
+                onGet() {
+                    return arr
+                },
+                onSet(value) {
+                    arr = value
+                },
+            })
+            expect(i.fieldName).toBe("i")
+            expect(i.fieldType.typeName).toBe("_ol[]")
+            expect(i.itemType.typeName).toBe("_ol")
+            expect(i.value).toBe(arr)
+            expect(i.validate()).toBeUndefined()
+            i.value.push(3)
+            expect(i.validate()).toBe("soma deve ser 3")
+            i.value.pop()
+            i.value.push(1)
+            expect(i.validate()).toBeUndefined()
+            i.value.push(2)
             expect(i.validate()).toBe("Máximo: 1")
         })
     })
