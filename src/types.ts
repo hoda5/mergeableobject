@@ -36,6 +36,11 @@ function isOptions<OPTIONS extends Options, CFG extends DefaultFieldOpts>(
     return !!(field as OptionsField<OPTIONS, CFG>).fieldType.options
 }
 
+function isArray<OPTIONS extends Options, CFG extends DefaultFieldOpts>(
+    field: DocField<any, any> | ComplexField<any> | OptionsField<OPTIONS, CFG>): field is OptionsField<OPTIONS, CFG> {
+    return !!(field as OptionsField<OPTIONS, CFG>).fieldType.options
+}
+
 export interface DocField<T, CFG> {
     fieldName: string
     fieldType: DocFieldType<T, CFG>
@@ -44,12 +49,15 @@ export interface DocField<T, CFG> {
     validate(): string | undefined,
 }
 
-export interface DocFieldArray<T, ITEMOPTS> {
+export interface DocFieldArray<T, CFG> {
     fieldName: string
     fieldType: {
         typeName: string,
     }
-    itemType: DocFieldType<T, ITEMOPTS>
+    itemType: {
+        typeName: string,
+        validate(v: T, cfg: CFG): string | undefined,
+    }
     value: T[]
     validate(): string | undefined,
 }
@@ -100,14 +108,14 @@ export function defType<T, CFG>(typeOpts: {
     typeByName[typeName] = type
     return type
 
-    function single(fieldOpts: CFG & DefaultFieldOpts) {
+    function single(cfg: CFG & DefaultFieldOpts) {
         const f: DocField<T, CFG & DefaultFieldOpts> = {
             fieldName: undefined as any,
             value: undefined as any,
             fieldType: type,
-            cfg: fieldOpts,
+            cfg,
             validate() {
-                return type.validate(f.value, fieldOpts)
+                return type.validate(f.value, f.cfg)
             },
         }
         return f
@@ -287,9 +295,11 @@ export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexField<
             const v = pvalues[p]
             if (isComplex(f)) {
                 err = _validateChildren([path, p, "/"].join(""), f.fieldType.fields, v)
+            // } else if (isArray(f)) {
+            //     err = _validateArray([path, p, "/"].join(""), f.fieldType.fields, v)
             } else {
                 const fv: any = f.fieldType.validate
-                err = fv(fv, f.cfg)
+                err = fv(v, f.cfg)
                 if (err) {
                     err = [err, " [", path, p, "]"].join("")
                     return true
@@ -310,11 +320,11 @@ export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexField<
 }
 
 export interface Options {
-    [name: string]: Option<keyof this>
+    [name: string]: Option
 }
 
-export interface Option<VALUE> {
-    value: VALUE,
+export interface Option {
+    value: number,
     text: string,
 }
 
@@ -336,14 +346,80 @@ export interface OptionsField<OPTIONS extends Options, CFG extends DefaultFieldO
     validate(): string | undefined,
 }
 
-export type OptionsValues<VALUES extends number[], OPTIONS> = {
-    [name in keyof OPTIONS]: OptionValue<OPTIONS[name]>
-}
-
-export type OptionValue<OPTION> =
-    OPTION extends Option<infer VALUE> ? VALUE : never
-
 export function options<OPTIONS extends Options>(
-    option: OPTIONS): OptionsType<OPTIONS> {
-    return null as any
+    typeName: string,
+    optionsCfg: OPTIONS): OptionsType<OPTIONS> {
+    const options_arr: Array<{ id: string, value: number, text: string }> = []
+    const options_values: {
+        [name in keyof OPTIONS]: number
+    } = {} as any
+    mount()
+    const ft: DocFieldType<number, DefaultFieldOpts> = {
+        typeName,
+        sample: options_arr[0].value,
+        single,
+        array,
+        validate,
+    }
+    const type = {
+        ...ft,
+        options: options_arr,
+    }
+        .mergeObjWith(options_values)
+        .mergeObjWith(single)
+    return type
+    function mount() {
+        Object.keys(optionsCfg).forEach((id: keyof OPTIONS) => {
+            options_arr.push({ id }.mergeObjWith(optionsCfg[id]) as any)
+            options_values[id] = optionsCfg[id].value
+        })
+    }
+    function single<CFG extends DefaultFieldOpts>(cfg: CFG): OptionsField<OPTIONS, CFG> {
+        const f: OptionsField<OPTIONS, CFG> = {
+            fieldName: undefined as any,
+            value: undefined as any,
+            fieldType: type,
+            cfg,
+            validate() {
+                return type.validate(f.value, f.cfg)
+            },
+        }
+        return f
+    }
+    function array<CFG extends DefaultFieldOpts>(cfg: DefaultArrayOpts<CFG>): DocFieldArray<number, CFG> {
+        const a: DocFieldArray<number, CFG> = {
+            fieldName: undefined as any,
+            value: undefined as any,
+            fieldType: {
+                typeName: type.typeName + "[]",
+            },
+            itemType: type,
+            validate() {
+                const v = a.value
+                const l = v && v.length || 0
+                if (l > 0) {
+                    if (cfg.minItems && l < cfg.minItems) return "Mínimo: " + cfg.minItems
+                    if (cfg.maxItems && l > cfg.maxItems) return "Máximo: " + cfg.maxItems
+                    let err: string | undefined
+                    v.some((i) => {
+                        err = type.validate(i, cfg.itemOpts)
+                        return err !== undefined
+                    })
+                    if (err) return err
+                } else if (!cfg.optional) return "Obrigatório"
+                return undefined
+            },
+        }
+        return a
+    }
+    function validate<CFG extends DefaultFieldOpts>(v: number, cfg: CFG): string | undefined {
+        if (typeof v === "number") {
+            if (type.options.some((o) => o.value === v)) return undefined
+        }
+        if (v === undefined) {
+            if (cfg.optional) return undefined
+            return "Obrigatório"
+        }
+        return "Valor inválido"
+    }
 }

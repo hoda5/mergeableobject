@@ -325,8 +325,10 @@ describe("types", () => {
         })
     })
 
-    describe("enumType", () => {
-        const _ol = options({
+    describe.only("optionsType", () => {
+        const _ol = options(
+            "_ol",
+            {
             op1: {
                 value: 1,
                 text: "Um",
@@ -355,12 +357,12 @@ describe("types", () => {
                 {
                     id: "op1",
                     value: 1,
-                    text: "um",
+                    text: "Um",
                 },
                 {
                     id: "op2",
                     value: 2,
-                    text: "dois",
+                    text: "Dois",
                 },
             ])
             expect(_ol.sample).toEqual(1)
@@ -369,8 +371,8 @@ describe("types", () => {
         it("validate", () => {
             expect(_ol.validate(undefined as any, {})).toBe("Obrigatório")
             expect(_ol.validate(undefined as any, { optional: false })).toBe("Obrigatório")
-            expect(_ol.validate(_ol.op1, {})).toBe("Obrigatório")
-            expect(_ol.validate(_ol.op2, {})).toBe("Obrigatório")
+            expect(_ol.validate(_ol.op1, {})).toBeUndefined()
+            expect(_ol.validate(_ol.op2, {})).toBeUndefined()
         })
 
         it("new field", () => {
@@ -385,7 +387,7 @@ describe("types", () => {
                     fv = value
                 },
             })
-            expect(f.fieldName).toBe("cf")
+            expect(f.fieldName).toBe("f")
             expect(f.fieldType.typeName).toBe("_ol")
 
             expect(f.value).toBe(undefined)
@@ -393,7 +395,7 @@ describe("types", () => {
 
             fv = 3
             expect(f.value).toEqual(3)
-            expect(f.validate()).toBe("soma deve ser 3")
+            expect(f.validate()).toBe("Valor inválido")
 
             f.value = _ol.op1
             expect(fv).toEqual(1)
@@ -404,6 +406,7 @@ describe("types", () => {
         it("array", () => {
             const i = _ol.array({ optional: true, maxItems: 1, itemOpts: {} })
             let arr: Array<typeof _ol.sample> = []
+            debugger
             configArray(i, {
                 name: "i",
                 onGet() {
@@ -419,7 +422,7 @@ describe("types", () => {
             expect(i.value).toBe(arr)
             expect(i.validate()).toBeUndefined()
             i.value.push(3)
-            expect(i.validate()).toBe("soma deve ser 3")
+            expect(i.validate()).toBe("Valor inválido")
             i.value.pop()
             i.value.push(1)
             expect(i.validate()).toBeUndefined()
