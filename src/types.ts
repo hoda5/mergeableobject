@@ -1,4 +1,5 @@
 import "@hoda5/extensions"
+import i18n from "./i18n"
 
 export interface DocDecl<FIELDS extends DocFields> {
     name: string,
@@ -16,6 +17,7 @@ export type PureField<T> =
     T extends ComplexField<infer COMPLEX> ? {
         [name in keyof COMPLEX]: PureField<COMPLEX[name]>
     } :
+    T extends DocFieldArray<infer ARR, any> ? ARR[] :
     T extends DocFields ? {
         [name in keyof T]: PureField<T[name]>
     } :
@@ -23,43 +25,74 @@ export type PureField<T> =
     : unknown
 
 export interface DocFields {
-    [name: string]: DocField<any, any> | ComplexField<any> | OptionsField<any, any>
+    [name: string]: DocField<any, any> | DocFieldArray<any, any> | ComplexField<any> | OptionsField<any, any>
 }
 
-function isComplex<T, CFG>(
-    field: DocField<T, CFG> | ComplexField<T> | OptionsField<any, any>): field is ComplexField<T> {
-    return !!(field as ComplexField<T>).validateChildren
+// TODO
+// function isComplex<T, CFG>(
+//     field: DocField<any, any> | DocFieldArray<any, any> | ComplexField<T> | OptionsField<any, any>)
+//     : field is ComplexField<T> {
+//     return !!(field as ComplexField<T>).validateChildren
+// }
+
+// function isOptions<OPTIONS extends Options, CFG extends DefaultFieldOpts>(
+//     field: DocField<any, any> | DocFieldArray<any, any> | ComplexField<any> | OptionsField<OPTIONS, CFG>)
+//     : field is OptionsField<OPTIONS, CFG> {
+//     return !!(field as OptionsField<OPTIONS, CFG>).fieldType.options
+// }
+
+// function isArray<OPTIONS extends Options, CFG extends DefaultFieldOpts>(
+//     field: DocField<any, any> | DocFieldArray<OPTIONS, CFG> | ComplexField<any> | OptionsField<any, any>)
+//     : field is DocFieldArray<OPTIONS, CFG> {
+//     return !!(field as DocFieldArray<OPTIONS, CFG>).fieldType.validateArray
+// }
+
+export type MessageArgs<O> =
+    O extends string ? [] :
+    O extends (...args: any[]) => string ? Parameters<O> :
+    never
+
+export interface MessageDef {
+    msg: string,
+    path: string[]
 }
 
-function isOptions<OPTIONS extends Options, CFG extends DefaultFieldOpts>(
-    field: DocField<any, any> | ComplexField<any> | OptionsField<OPTIONS, CFG>): field is OptionsField<OPTIONS, CFG> {
-    return !!(field as OptionsField<OPTIONS, CFG>).fieldType.options
-}
+export type MessageError = MessageDef | undefined
 
-function isArray<OPTIONS extends Options, CFG extends DefaultFieldOpts>(
-    field: DocField<any, any> | ComplexField<any> | OptionsField<OPTIONS, CFG>): field is OptionsField<OPTIONS, CFG> {
-    return !!(field as OptionsField<OPTIONS, CFG>).fieldType.options
+export function message<O extends object, P extends keyof O>(
+    path: string[], o: O, p: P, ...args: MessageArgs<O[P]>): MessageDef {
+    const f = o[p]
+    const msg = typeof f === "function" ? f(...args) : f
+    return {
+        msg,
+        path,
+    }
 }
 
 export interface DocField<T, CFG> {
     fieldName: string
+    fieldPath: string[]
     fieldType: DocFieldType<T, CFG>
     cfg: CFG,
     value: T,
-    validate(): string | undefined,
+    validate(): MessageError,
 }
 
 export interface DocFieldArray<T, CFG> {
     fieldName: string
+    fieldPath: string[]
     fieldType: {
         typeName: string,
+        sample: T[],
+        validate(path: string[], items: T[], cfg: DefaultArrayOpts<CFG>): MessageError,
     }
     itemType: {
         typeName: string,
-        validate(v: T, cfg: CFG): string | undefined,
+        validate(path: string[], value: T, cfg: CFG): MessageError,
     }
+    cfg: DefaultArrayOpts<CFG>,
     value: T[]
-    validate(): string | undefined,
+    validate(): MessageError,
 }
 
 interface DocFieldType<T, CFG extends DefaultFieldOpts> {
@@ -67,7 +100,7 @@ interface DocFieldType<T, CFG extends DefaultFieldOpts> {
     sample: T,
     single: DocFieldInstance<T, CFG & DefaultFieldOpts>
     array(cfg: DefaultArrayOpts<CFG>): DocFieldArray<T, CFG>
-    validate(v: T, cfg: CFG): string | undefined,
+    validate(path: string[], v: T, cfg: CFG): MessageError,
 }
 
 export interface DefaultFieldOpts {
@@ -91,7 +124,7 @@ export const typeByName: { [name: string]: DocFieldType<any, any> } = {}
 export function defType<T, CFG>(typeOpts: {
     typeName: string,
     sample: T,
-    validate(value: T, cfg: CFG & DefaultFieldOpts): string | undefined,
+    validate(path: string[], value: T, cfg: CFG & DefaultFieldOpts): MessageError,
 }): DocFieldType<T, CFG & DefaultFieldOpts>
     & DocFieldInstance<T, CFG> {
     const { typeName, sample, validate } = typeOpts
@@ -111,11 +144,12 @@ export function defType<T, CFG>(typeOpts: {
     function single(cfg: CFG & DefaultFieldOpts) {
         const f: DocField<T, CFG & DefaultFieldOpts> = {
             fieldName: undefined as any,
+            fieldPath: undefined as any,
             value: undefined as any,
             fieldType: type,
             cfg,
             validate() {
-                return type.validate(f.value, f.cfg)
+                return type.validate([], f.value, f.cfg)
             },
         }
         return f
@@ -123,38 +157,50 @@ export function defType<T, CFG>(typeOpts: {
     function array(arrayOpts: DefaultArrayOpts<CFG>) {
         const a: DocFieldArray<T, CFG> = {
             fieldName: undefined as any,
+            fieldPath: undefined as any,
             value: undefined as any,
             fieldType: {
                 typeName: type.typeName + "[]",
+                sample: [type.sample],
+                validate: validateArray,
             },
             itemType: type,
+            cfg: arrayOpts,
             validate() {
-                const v = a.value
-                const l = v && v.length || 0
-                if (l > 0) {
-                    if (arrayOpts.minItems && l < arrayOpts.minItems) return "Mínimo: " + arrayOpts.minItems
-                    if (arrayOpts.maxItems && l > arrayOpts.maxItems) return "Máximo: " + arrayOpts.maxItems
-                    let err: string | undefined
-                    v.some((i) => {
-                        err = type.validate(i, arrayOpts.itemOpts)
-                        return err !== undefined
-                    })
-                    if (err) return err
-                } else if (!arrayOpts.optional) return "Obrigatório"
-                return undefined
+                return validateArray(a.fieldPath, a.value)
             },
         }
         return a
+        function validateArray(path: string[], items: T[]): MessageError {
+            const v = a.value
+            const l = v && v.length || 0
+            if (l > 0) {
+                if (arrayOpts.minItems && l < arrayOpts.minItems) {
+                    return message(path, i18n, "minLen", arrayOpts.minItems)
+                }
+                if (arrayOpts.maxItems && l > arrayOpts.maxItems) {
+                    return message(path, i18n, "maxLen", arrayOpts.maxItems)
+                }
+                let err: MessageError
+                items.some((i, idx) => {
+                    err = type.validate([...path, idx.toString()], i, arrayOpts.itemOpts)
+                    return !!err
+                })
+                if (err) return err
+            } else if (!arrayOpts.optional) return message(path, i18n, "required")
+            return undefined
+        }
     }
 }
 
 export function configField<T, CFG>(field: DocField<T, CFG>, cfg: {
-    name: string,
+    fieldPath: string[],
     onGet(): T,
     onSet(value: T): void,
 }) {
     Object.defineProperties(field, {
-        fieldName: { value: cfg.name },
+        fieldName: { value: cfg.fieldPath[cfg.fieldPath.length - 1] },
+        fieldPath: { value: cfg.fieldPath },
         value: {
             get: cfg.onGet,
             set: cfg.onSet,
@@ -162,12 +208,13 @@ export function configField<T, CFG>(field: DocField<T, CFG>, cfg: {
     })
 }
 export function configArray<T, CFG>(field: DocFieldArray<T, CFG>, cfg: {
-    name: string,
+    fieldPath: string[],
     onGet(): T[],
     onSet(value: T[]): void,
 }) {
     Object.defineProperties(field, {
-        fieldName: { value: cfg.name },
+        fieldName: { value: cfg.fieldPath[cfg.fieldPath.length - 1] },
+        fieldPath: { value: cfg.fieldPath },
         value: {
             get: cfg.onGet,
             set: cfg.onSet,
@@ -186,12 +233,16 @@ export const stringType = defType<string, {
 }>({
     typeName: "string",
     sample: "",
-    validate(value, cfg) {
+    validate(path, value, cfg) {
         if (typeof value === "string") {
-            if (cfg.minLen && value.length < cfg.minLen) return "Tamanho mínimo: " + cfg.minLen
-            if (cfg.maxLen && value.length > cfg.maxLen) return "Tamanho máximo: " + cfg.maxLen
-        } else if (value) return "Tipo do dado inválido (" + typeof value + ")"
-        else return "Obrigatório"
+            if (cfg.minLen && value.length < cfg.minLen) {
+                return message(path, i18n, "minLen", cfg.minLen)
+            }
+            if (cfg.maxLen && value.length > cfg.maxLen) {
+                return message(path, i18n, "maxLen", cfg.maxLen)
+            }
+        } else if (value) return message(path, i18n, "invalid", typeof value)
+        else return message(path, i18n, "required")
         return undefined
     },
 })
@@ -202,12 +253,12 @@ export const numberType = defType<number, {
 }>({
     typeName: "number",
     sample: 0,
-    validate(value, cfg) {
+    validate(path, value, cfg) {
         if (typeof value === "number") {
-            if (cfg.min && value < cfg.min) return "Mínimo: " + cfg.min
-            if (cfg.max && value > cfg.max) return "Máximo: " + cfg.max
-        } else if (value) return "Tipo do dado inválido (" + typeof value + ")"
-        else return "Obrigatório"
+            if (cfg.min && value < cfg.min) return message(path, i18n, "min", cfg.min)
+            if (cfg.max && value > cfg.max) return message(path, i18n, "max", cfg.max)
+        } else if (value) return message(path, i18n, "invalid", typeof value)
+        else return message(path, i18n, "required")
         return undefined
     },
 })
@@ -218,12 +269,12 @@ export const DateISOType = defType<DateISO, {
 }>({
     typeName: "DateISO",
     sample: "2018-10-27T12:00:00.000Z".toDateISO(),
-    validate(value, cfg) {
+    validate(path, value, cfg) {
         if (typeof value === "string") {
-            if (cfg.min && value < cfg.min) return "Mínimo: " + cfg.min
-            if (cfg.max && value > cfg.max) return "Máximo: " + cfg.max
-        } else if (value) return "Tipo do dado inválido (" + typeof value + ")"
-        else return "Obrigatório"
+            if (cfg.min && value < cfg.min) return message(path, i18n, "min", cfg.min)
+            if (cfg.max && value > cfg.max) return message(path, i18n, "max", cfg.max)
+        } else if (value) return message(path, i18n, "invalid", typeof value)
+        else return message(path, i18n, "required")
         return undefined
     },
 })
@@ -231,8 +282,8 @@ export const DateISOType = defType<DateISO, {
 export const booleanType = defType<boolean, {}>({
     typeName: "boolean",
     sample: false,
-    validate(value, cfg) {
-        if (typeof value !== "boolean") return "Obrigatório"
+    validate(path, value, cfg) {
+        if (typeof value !== "boolean") return message(path, i18n, "required")
         return undefined
     },
 })
@@ -241,11 +292,18 @@ export interface ComplexField<FIELDS> {
     fieldType: {
         fields: FIELDS,
         sample: PureField<FIELDS>,
+        validate<CFG extends DefaultFieldOpts>(
+            path: string[],
+            values: PureField<FIELDS>,
+            cfg: CFG & DefaultFieldOpts): MessageError,
     },
-    validateChildren(values: PureField<FIELDS>): string | undefined,
+    cfg: {},
     defType<CFG>(typeOpts: {
         typeName: string,
-        validate?(value: PureField<FIELDS>, cfg: CFG & DefaultFieldOpts): string | undefined,
+        validate?(
+            path: string[],
+            values: PureField<FIELDS>,
+            cfg: CFG & DefaultFieldOpts): MessageError,
     }): DocFieldType<PureField<FIELDS>, CFG & DefaultFieldOpts>
         & DocFieldInstance<PureField<FIELDS>, CFG & DefaultFieldOpts>
 }
@@ -256,27 +314,28 @@ export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexField<
         fieldType: {
             fields,
             sample,
+            validate(path, values, cfg) {
+                return validateChildren(path, fields, values)
+            },
         },
-        validateChildren(values: PureField<FIELDS>): string | undefined {
-            return _validateChildren("", fields, values)
-        },
+        cfg: {},
         defType<CFG>(typeOpts: {
             typeName: string,
-            validate?(value: PureField<FIELDS>, cfg: CFG & DefaultFieldOpts): string | undefined,
+            validate?(path: string[], value: PureField<FIELDS>, cfg: CFG & DefaultFieldOpts): MessageError,
         }): DocFieldType<PureField<FIELDS>, CFG & DefaultFieldOpts>
             & DocFieldInstance<PureField<FIELDS>, CFG & DefaultFieldOpts> {
 
-            const validate = typeOpts.validate
+            const optsValidate = typeOpts.validate
 
             return defType<PureField<FIELDS>, CFG & DefaultFieldOpts>({
                 ...typeOpts,
                 sample,
-                validate(value: PureField<FIELDS>, fieldOpts: CFG & DefaultFieldOpts) {
+                validate(path: string[], value: PureField<FIELDS>, fieldOpts: CFG & DefaultFieldOpts) {
                     if (value) {
-                        const err = _complex.validateChildren(value)
+                        const err = _complex.fieldType.validate(path, value, fieldOpts)
                         if (err) return err
-                        if (validate) return validate(value, fieldOpts)
-                    } else if (!fieldOpts.optional) return "Obrigatório"
+                        if (optsValidate) return optsValidate(path, value, fieldOpts)
+                    } else if (!fieldOpts.optional) return message(path, i18n, "required")
                     return undefined
                 },
             })
@@ -284,28 +343,32 @@ export function complex<FIELDS extends DocFields>(fields: FIELDS): ComplexField<
     }
     return _complex
 
-    function _validateChildren(
-        path: string,
-        pfields: { [name: string]: DocField<any, any> | ComplexField<any> | OptionsField<any, any> },
-        pvalues: any): string | undefined {
-        let err: string | undefined
+    function validateChildren(
+        path: string[],
+        pfields: {
+            [name: string]: DocField<any, any> | DocFieldArray<any, any> | ComplexField<any> | OptionsField<any, any>,
+        },
+        pvalues: any): MessageError {
+        let err: MessageError
         pvalues = pvalues || {}
         Object.keys(pfields).some((p) => {
             const f = pfields[p]
             const v = pvalues[p]
-            if (isComplex(f)) {
-                err = _validateChildren([path, p, "/"].join(""), f.fieldType.fields, v)
+            err = (f.fieldType.validate as any)([...path, p], v, f.cfg)
+            return !!err
+            // if (isComplex(f)) {
+            //     err = _validateChildren([path, p, "/"].join(""), f.fieldType.fields, v)
             // } else if (isArray(f)) {
-            //     err = _validateArray([path, p, "/"].join(""), f.fieldType.fields, v)
-            } else {
-                const fv: any = f.fieldType.validate
-                err = fv(v, f.cfg)
-                if (err) {
-                    err = [err, " [", path, p, "]"].join("")
-                    return true
-                }
-            }
-            return false
+            //     err = f.fieldType.validateArray([path, p, "/"].join(""), f.fieldType.fields, v)
+            // } else {
+            //     const fv: any = f.fieldType.validate
+            //     err = fv(v, f.cfg)
+            //     if (err) {
+            //         err = [err, " [", path, p, "]"].join("")
+            //         return true
+            //     }
+            // }
+            // return false
         })
         return err
     }
@@ -340,10 +403,11 @@ export type OptionsType<OPTIONS extends Options> =
 
 export interface OptionsField<OPTIONS extends Options, CFG extends DefaultFieldOpts> {
     fieldName: string
+    fieldPath: string[]
     fieldType: OptionsType<OPTIONS>,
     cfg: CFG,
     value: number,
-    validate(): string | undefined,
+    validate(): MessageError,
 }
 
 export function options<OPTIONS extends Options>(
@@ -377,11 +441,12 @@ export function options<OPTIONS extends Options>(
     function single<CFG extends DefaultFieldOpts>(cfg: CFG): OptionsField<OPTIONS, CFG> {
         const f: OptionsField<OPTIONS, CFG> = {
             fieldName: undefined as any,
+            fieldPath: undefined as any,
             value: undefined as any,
             fieldType: type,
             cfg,
             validate() {
-                return type.validate(f.value, f.cfg)
+                return type.validate(f.fieldPath, f.value, f.cfg)
             },
         }
         return f
@@ -389,37 +454,42 @@ export function options<OPTIONS extends Options>(
     function array<CFG extends DefaultFieldOpts>(cfg: DefaultArrayOpts<CFG>): DocFieldArray<number, CFG> {
         const a: DocFieldArray<number, CFG> = {
             fieldName: undefined as any,
+            fieldPath: undefined as any,
+            cfg,
             value: undefined as any,
             fieldType: {
                 typeName: type.typeName + "[]",
+                sample: [type.sample],
+                validate(path, items) {
+                    const l = items && items.length || 0
+                    if (l > 0) {
+                        if (cfg.minItems && l < cfg.minItems) return message(path, i18n, "minLen", cfg.minItems)
+                        if (cfg.maxItems && l > cfg.maxItems) return message(path, i18n, "maxLen", cfg.maxItems)
+                        let err: MessageError
+                        items.some((i) => {
+                            err = type.validate(path, i, cfg.itemOpts)
+                            return err !== undefined
+                        })
+                        if (err) return err
+                    } else if (!cfg.optional) return message(path, i18n, "required")
+                    return undefined
+                },
             },
             itemType: type,
             validate() {
-                const v = a.value
-                const l = v && v.length || 0
-                if (l > 0) {
-                    if (cfg.minItems && l < cfg.minItems) return "Mínimo: " + cfg.minItems
-                    if (cfg.maxItems && l > cfg.maxItems) return "Máximo: " + cfg.maxItems
-                    let err: string | undefined
-                    v.some((i) => {
-                        err = type.validate(i, cfg.itemOpts)
-                        return err !== undefined
-                    })
-                    if (err) return err
-                } else if (!cfg.optional) return "Obrigatório"
-                return undefined
+                return a.fieldType.validate(a.fieldPath, a.value, cfg)
             },
         }
         return a
     }
-    function validate<CFG extends DefaultFieldOpts>(v: number, cfg: CFG): string | undefined {
+    function validate<CFG extends DefaultFieldOpts>(path: string[], v: number, cfg: CFG): MessageError {
         if (typeof v === "number") {
             if (type.options.some((o) => o.value === v)) return undefined
         }
         if (v === undefined) {
             if (cfg.optional) return undefined
-            return "Obrigatório"
+            return message(path, i18n, "required")
         }
-        return "Valor inválido"
+        return message(path, i18n, "invalid", v)
     }
 }

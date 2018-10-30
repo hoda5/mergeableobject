@@ -22,6 +22,7 @@
     "noEmitHelpers": true,
     "skipLibCheck": true,
     "importHelpers": true,
+    "noErrorTruncation": true
   },
   "include": [
     "src"

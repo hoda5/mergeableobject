@@ -21,8 +21,7 @@
     "quotemark": [
       true,
       "double",
-      "avoid-escape",
-      "avoid-template"
+      "avoid-escape"            
     ],
     "await-promise": true,
     "no-unused-variable": false
